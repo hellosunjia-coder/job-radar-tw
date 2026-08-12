@@ -30,3 +30,65 @@ profiles:
     domain_terms: [cloud, platform, product analytics, data platform, artificial intelligence, machine learning, infrastructure, marketplace]
     skills: [sql, python, tableau, power bi, dbt, gcp, aws]
     gap_terms: {}
+
+  - name: sunjia_ai_product_designer
+    version: "1.0"
+    threshold: 0.70
+    strong_threshold: 0.85
+
+    weights:
+      domain: 0.35
+      title: 0.25
+      skills: 0.20
+      location: 0.10
+      seniority: 0.10
+
+    title_terms:
+      - senior product designer
+      - senior ux designer
+      - senior interaction designer
+      - product designer
+      - ux designer
+      - ai product designer
+      - ai experience designer
+      - interaction designer
+      - design lead
+      - design manager
+
+    domain_terms:
+      - artificial intelligence
+      - generative ai
+      - ai interaction
+      - ai agents
+      - intelligent assistant
+      - conversational ai
+      - healthcare
+      - health tech
+      - enterprise software
+      - ai platform
+      - machine learning
+
+    skills:
+      - figma
+      - prototyping
+      - interaction design
+      - product design
+      - ux design
+      - design systems
+      - user research
+      - usability testing
+      - ai ux
+      - accessibility
+      - workflow design
+      - journey mapping
+
+    gap_terms:
+      frontend engineering:
+        - react
+        - javascript
+        - frontend engineering
+
+      consumer experience:
+        - b2c
+        - consumer product
+        - mobile consumer app
