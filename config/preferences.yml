@@ -2,9 +2,12 @@
 # An empty location_terms list accepts any non-remote location.
 preferences:
   location_terms:
-    - New York
-    - San Francisco
     - Austin
+    - San Francisco
+    - San Jose
+    - Oakland
+    - Bay Area
+    - Seattle
   include_remote: true
   exclude_citizenship_required: true
   exclude_clearance_required: true
