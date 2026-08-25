@@ -3,8 +3,8 @@ name: Job Radar TW
 on:
   schedule:
     # Keep this timezone and MONITOR_TIMEZONE below in sync when you customize the schedule.
-    - cron: "17,47 20-22 * * *"
-      timezone: "America/New_York"
+    - cron: "17,47 8-10 * * *"
+      timezone: "America/Chicago"
   workflow_dispatch:
     inputs:
       run_key:
@@ -59,8 +59,8 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           LLM_ENABLED: ${{ vars.LLM_ENABLED || 'false' }}
           VISA_SPONSORSHIP_REQUIRED: ${{ vars.VISA_SPONSORSHIP_REQUIRED || 'false' }}
-          MONITOR_TIMEZONE: ${{ vars.MONITOR_TIMEZONE || 'America/New_York' }}
-          MONITOR_HOUR: ${{ vars.MONITOR_HOUR || '20' }}
+          MONITOR_TIMEZONE: ${{ vars.MONITOR_TIMEZONE || 'America/Chicago' }}
+          MONITOR_HOUR: ${{ vars.MONITOR_HOUR || '8' }}
           SCHEDULE_GRACE_HOURS: ${{ vars.SCHEDULE_GRACE_HOURS || '16' }}
           IMMEDIATE_NOTIFICATION_MIN_SCORE: ${{ vars.IMMEDIATE_NOTIFICATION_MIN_SCORE || '0.82' }}
           IMMEDIATE_NOTIFICATION_MAX_SOURCE_AGE_DAYS: ${{ vars.IMMEDIATE_NOTIFICATION_MAX_SOURCE_AGE_DAYS || '21' }}
@@ -87,8 +87,8 @@ jobs:
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
           LLM_ENABLED: ${{ vars.LLM_ENABLED || 'false' }}
           VISA_SPONSORSHIP_REQUIRED: ${{ vars.VISA_SPONSORSHIP_REQUIRED || 'false' }}
-          MONITOR_TIMEZONE: ${{ vars.MONITOR_TIMEZONE || 'America/New_York' }}
-          MONITOR_HOUR: ${{ vars.MONITOR_HOUR || '20' }}
+          MONITOR_TIMEZONE: ${{ vars.MONITOR_TIMEZONE || 'America/Chicago' }}
+          MONITOR_HOUR: ${{ vars.MONITOR_HOUR || '8' }}
           SCHEDULE_GRACE_HOURS: ${{ vars.SCHEDULE_GRACE_HOURS || '16' }}
           IMMEDIATE_NOTIFICATION_MIN_SCORE: ${{ vars.IMMEDIATE_NOTIFICATION_MIN_SCORE || '0.82' }}
           IMMEDIATE_NOTIFICATION_MAX_SOURCE_AGE_DAYS: ${{ vars.IMMEDIATE_NOTIFICATION_MAX_SOURCE_AGE_DAYS || '21' }}
