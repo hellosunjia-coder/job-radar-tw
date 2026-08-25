@@ -12,8 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 
 
 class AtsType(StrEnum):
+    AMAZON = "amazon"
+    APPLE = "apple"
     GREENHOUSE = "greenhouse"
+    GOOGLE = "google"
     LEVER = "lever"
+    MICROSOFT = "microsoft"
     ASHBY = "ashby"
     SMARTRECRUITERS = "smartrecruiters"
     WORKDAY = "workday"
@@ -87,8 +91,12 @@ class CompanyConfig(BaseModel):
     @model_validator(mode="after")
     def validate_ats_config(self) -> "CompanyConfig":
         required = {
+            AtsType.AMAZON: {"endpoint"},
+            AtsType.APPLE: set(),
             AtsType.GREENHOUSE: {"board_token"},
+            AtsType.GOOGLE: set(),
             AtsType.LEVER: {"site"},
+            AtsType.MICROSOFT: {"search_endpoint", "detail_endpoint", "domain"},
             AtsType.ASHBY: {"board_name"},
             AtsType.SMARTRECRUITERS: {"company_identifier"},
             AtsType.WORKDAY: {"endpoint", "site", "detail_base_url"},
