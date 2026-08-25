@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
+import re
 from abc import ABC, abstractmethod
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 from bs4 import BeautifulSoup
@@ -33,6 +36,20 @@ def _html_text(value: str | None) -> str:
 
 class SourceError(RuntimeError):
     pass
+
+
+def _parse_apple_hydration(page: str) -> dict[str, Any]:
+    match = re.search(
+        r'window\.__staticRouterHydrationData\s*=\s*JSON\.parse\((".*?")\);',
+        page,
+        flags=re.DOTALL,
+    )
+    if not match:
+        raise SourceError("Apple careers hydration data not found")
+    try:
+        return json.loads(json.loads(match.group(1)))
+    except json.JSONDecodeError as exc:
+        raise SourceError("Apple careers hydration data is invalid") from exc
 
 
 class JobSource(ABC):
@@ -211,6 +228,227 @@ class WorkdaySource(JobSource):
         return jobs
 
 
+class AmazonSource(JobSource):
+    async def fetch(self) -> list[RawJob]:
+        cfg = self.company.ats_config
+        endpoint = cfg["endpoint"]
+        search_texts = cfg.get("search_texts") or ["product designer"]
+        location = cfg.get("location", "United States")
+        limit = int(cfg.get("limit", 100))
+        jobs: list[RawJob] = []
+        seen: set[str] = set()
+        for search_text in search_texts:
+            offset = 0
+            while True:
+                payload = await self.get_json(
+                    endpoint,
+                    params={
+                        "base_query": search_text,
+                        "loc_query": location,
+                        "offset": offset,
+                        "result_limit": limit,
+                    },
+                )
+                postings = payload.get("jobs", [])
+                for item in postings:
+                    external_id = str(item.get("id_icims") or item.get("id") or "")
+                    if not external_id or external_id in seen:
+                        continue
+                    seen.add(external_id)
+                    description = " ".join(
+                        _html_text(item.get(field))
+                        for field in (
+                            "description",
+                            "basic_qualifications",
+                            "preferred_qualifications",
+                        )
+                    )
+                    jobs.append(
+                        RawJob(
+                            source_company=self.company.slug,
+                            external_job_id=external_id,
+                            title=item["title"],
+                            location_raw=item.get("normalized_location")
+                            or item.get("location", ""),
+                            description_raw=description,
+                            url=urljoin(str(self.company.careers_url), item["job_path"]),
+                            metadata={"amazon": item},
+                        )
+                    )
+                offset += len(postings)
+                total = int(payload.get("hits", offset))
+                if not postings or offset >= total:
+                    break
+        return jobs
+
+
+class MicrosoftSource(JobSource):
+    async def fetch(self) -> list[RawJob]:
+        cfg = self.company.ats_config
+        search_texts = cfg.get("search_texts") or ["product designer"]
+        location = cfg.get("location", "United States")
+        jobs: list[RawJob] = []
+        seen: set[str] = set()
+        for search_text in search_texts:
+            start = 0
+            while True:
+                payload = await self.get_json(
+                    cfg["search_endpoint"],
+                    params={
+                        "domain": cfg["domain"],
+                        "query": search_text,
+                        "location": location,
+                        "start": start,
+                    },
+                )
+                data = payload.get("data") or {}
+                positions = data.get("positions", [])
+                for item in positions:
+                    external_id = str(item["id"])
+                    if external_id in seen:
+                        continue
+                    seen.add(external_id)
+                    detail_payload = await self.get_json(
+                        cfg["detail_endpoint"],
+                        params={
+                            "position_id": external_id,
+                            "domain": cfg["domain"],
+                            "hl": "en",
+                        },
+                    )
+                    detail = detail_payload.get("data") or item
+                    public_path = detail.get("positionUrl") or item.get("positionUrl", "")
+                    jobs.append(
+                        RawJob(
+                            source_company=self.company.slug,
+                            external_job_id=external_id,
+                            title=detail.get("name") or item["name"],
+                            location_raw=", ".join(
+                                detail.get("standardizedLocations")
+                                or detail.get("locations")
+                                or item.get("standardizedLocations")
+                                or item.get("locations")
+                                or []
+                            ),
+                            description_raw=_html_text(detail.get("jobDescription")),
+                            posted_at=_parse_datetime(detail.get("postedTs")),
+                            url=detail.get("publicUrl")
+                            or urljoin(str(self.company.careers_url), public_path),
+                            metadata={"microsoft": detail},
+                        )
+                    )
+                start += len(positions)
+                total = int(data.get("count", start))
+                if not positions or start >= total:
+                    break
+        return jobs
+
+
+class GoogleSource(JobSource):
+    async def fetch(self) -> list[RawJob]:
+        cfg = self.company.ats_config
+        search_texts = cfg.get("search_texts") or ["product designer"]
+        location = cfg.get("location", "United States")
+        max_pages = int(cfg.get("max_pages", 2))
+        jobs: list[RawJob] = []
+        seen: set[str] = set()
+        for search_text in search_texts:
+            for page in range(1, max_pages + 1):
+                response = await self.client.get(
+                    str(self.company.careers_url),
+                    params={"q": search_text, "location": location, "page": page},
+                )
+                response.raise_for_status()
+                soup = BeautifulSoup(response.text, "html.parser")
+                base_node = soup.find("base", href=True)
+                base_url = (
+                    urljoin(str(response.url), str(base_node["href"]))
+                    if base_node
+                    else str(response.url)
+                )
+                page_jobs = 0
+                for card in soup.select("li.lLd3Je"):
+                    title_node = card.find("h3")
+                    link = card.find("a", href=re.compile(r"jobs/results/"))
+                    if not title_node or not link:
+                        continue
+                    id_match = re.search(r"jobs/results/(\d+)", str(link.get("href", "")))
+                    if not id_match or id_match.group(1) in seen:
+                        continue
+                    external_id = id_match.group(1)
+                    seen.add(external_id)
+                    page_jobs += 1
+                    locations = [
+                        node.get_text(" ", strip=True).lstrip("; ")
+                        for node in card.select("span.r0wTof")
+                    ]
+                    jobs.append(
+                        RawJob(
+                            source_company=self.company.slug,
+                            external_job_id=external_id,
+                            title=title_node.get_text(" ", strip=True),
+                            location_raw="; ".join(dict.fromkeys(locations)),
+                            description_raw=card.get_text(" ", strip=True),
+                            url=urljoin(base_url, str(link["href"])),
+                            metadata={"google_search": search_text},
+                        )
+                    )
+                if not page_jobs:
+                    break
+        return jobs
+
+
+class AppleSource(JobSource):
+    async def fetch(self) -> list[RawJob]:
+        max_pages = int(self.company.ats_config.get("max_pages", 3))
+        jobs: list[RawJob] = []
+        seen: set[str] = set()
+        for page in range(1, max_pages + 1):
+            url = httpx.URL(str(self.company.careers_url)).copy_set_param("page", page)
+            response = await self.client.get(url)
+            response.raise_for_status()
+            hydration = _parse_apple_hydration(html.unescape(response.text))
+            search = (hydration.get("loaderData") or {}).get("search") or {}
+            postings = search.get("searchResults", [])
+            for item in postings:
+                external_id = str(item.get("reqId") or item.get("id") or "")
+                if not external_id or external_id in seen:
+                    continue
+                seen.add(external_id)
+                locations = [
+                    ", ".join(
+                        value
+                        for value in (
+                            location.get("name", ""),
+                            location.get("stateProvince", ""),
+                            location.get("countryName", ""),
+                        )
+                        if value
+                    )
+                    for location in item.get("locations", [])
+                ]
+                slug = item.get("transformedPostingTitle", "job")
+                jobs.append(
+                    RawJob(
+                        source_company=self.company.slug,
+                        external_job_id=external_id,
+                        title=item["postingTitle"],
+                        location_raw="; ".join(locations),
+                        description_raw=item.get("jobSummary", ""),
+                        posted_at=_parse_datetime(item.get("postDateInGMT")),
+                        url=urljoin(
+                            str(self.company.careers_url),
+                            f"/en-us/details/{external_id}/{slug}",
+                        ),
+                        metadata={"apple": item},
+                    )
+                )
+            total = int(search.get("totalRecords", len(jobs)))
+            if not postings or len(jobs) >= total:
+                break
+        return jobs
+
+
 class JsonLdSource(JobSource):
     async def fetch(self) -> list[RawJob]:
         response = await self.client.get(str(self.company.careers_url))
@@ -251,8 +489,12 @@ class JsonLdSource(JobSource):
 
 
 SOURCE_CLASSES: dict[AtsType, type[JobSource]] = {
+    AtsType.AMAZON: AmazonSource,
+    AtsType.APPLE: AppleSource,
     AtsType.GREENHOUSE: GreenhouseSource,
+    AtsType.GOOGLE: GoogleSource,
     AtsType.LEVER: LeverSource,
+    AtsType.MICROSOFT: MicrosoftSource,
     AtsType.ASHBY: AshbySource,
     AtsType.SMARTRECRUITERS: SmartRecruitersSource,
     AtsType.WORKDAY: WorkdaySource,
