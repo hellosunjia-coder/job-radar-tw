@@ -1,12 +1,18 @@
+import json
+
 import httpx
 import pytest
 import respx
 
 from job_monitor.models import CompanyConfig
 from job_monitor.sources import (
+    AmazonSource,
+    AppleSource,
     AshbySource,
+    GoogleSource,
     GreenhouseSource,
     LeverSource,
+    MicrosoftSource,
     SmartRecruitersSource,
     WorkdaySource,
 )
@@ -164,3 +170,187 @@ async def test_workday_searches_and_deduplicates():
         rows = await WorkdaySource(cfg, client).fetch()
     assert len(rows) == 1
     assert rows[0].external_job_id.endswith("_R1")
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_amazon_search_api():
+    endpoint = "https://www.amazon.jobs/en/search.json"
+    respx.get(
+        endpoint,
+        params={
+            "base_query": "product designer",
+            "loc_query": "United States",
+            "offset": 0,
+            "result_limit": 100,
+        },
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "hits": 1,
+                "jobs": [
+                    {
+                        "id_icims": "123",
+                        "title": "Senior Product Designer",
+                        "normalized_location": "Seattle, Washington, USA",
+                        "description": "<p>AI product design</p>",
+                        "basic_qualifications": "<p>Figma</p>",
+                        "preferred_qualifications": "",
+                        "job_path": "/en/jobs/123/senior-product-designer",
+                    }
+                ],
+            },
+        )
+    )
+    cfg = company("amazon", {"endpoint": endpoint})
+    cfg = cfg.model_copy(update={"careers_url": "https://www.amazon.jobs/"})
+    async with httpx.AsyncClient() as client:
+        rows = await AmazonSource(cfg, client).fetch()
+    assert rows[0].external_job_id == "123"
+    assert rows[0].description_raw == "AI product design Figma "
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_microsoft_search_and_detail_api():
+    search_endpoint = "https://apply.careers.microsoft.com/api/pcsx/search"
+    detail_endpoint = "https://apply.careers.microsoft.com/api/pcsx/position_details"
+    respx.get(
+        search_endpoint,
+        params={
+            "domain": "microsoft.com",
+            "query": "product designer",
+            "location": "United States",
+            "start": 0,
+        },
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "count": 1,
+                    "positions": [
+                        {
+                            "id": 456,
+                            "name": "Product Designer II",
+                            "locations": ["United States, Washington, Redmond"],
+                            "positionUrl": "/careers/job/456",
+                        }
+                    ],
+                }
+            },
+        )
+    )
+    respx.get(
+        detail_endpoint,
+        params={"position_id": "456", "domain": "microsoft.com", "hl": "en"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "id": 456,
+                    "name": "Product Designer II",
+                    "standardizedLocations": ["Redmond, WA, US"],
+                    "jobDescription": "<p>AI experiences and Figma</p>",
+                    "positionUrl": "/careers/job/456",
+                    "postedTs": 1787332000,
+                }
+            },
+        )
+    )
+    cfg = company(
+        "microsoft",
+        {
+            "search_endpoint": search_endpoint,
+            "detail_endpoint": detail_endpoint,
+            "domain": "microsoft.com",
+        },
+    )
+    cfg = cfg.model_copy(update={"careers_url": "https://apply.careers.microsoft.com/"})
+    async with httpx.AsyncClient() as client:
+        rows = await MicrosoftSource(cfg, client).fetch()
+    assert rows[0].location_raw == "Redmond, WA, US"
+    assert rows[0].description_raw == "AI experiences and Figma"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_google_search_html():
+    endpoint = "https://www.google.com/about/careers/applications/jobs/results/"
+    respx.get(
+        endpoint,
+        params={"q": "product designer", "location": "United States", "page": 1},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <base href="/about/careers/applications/">
+            <ul><li class="lLd3Je">
+              <h3>Staff AI Product Designer</h3>
+              <span class="r0wTof">Mountain View, CA, USA</span>
+              <p>Design conversational AI experiences with Figma.</p>
+              <a href="jobs/results/789-staff-ai-product-designer">Learn more</a>
+            </li></ul>
+            """,
+            request=httpx.Request("GET", endpoint),
+        )
+    )
+    cfg = company("google", {"max_pages": 1})
+    cfg = cfg.model_copy(update={"careers_url": endpoint})
+    async with httpx.AsyncClient() as client:
+        rows = await GoogleSource(cfg, client).fetch()
+    assert rows[0].external_job_id == "789"
+    assert rows[0].location_raw == "Mountain View, CA, USA"
+    assert str(rows[0].url).startswith(
+        "https://www.google.com/about/careers/applications/jobs/results/789"
+    )
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_apple_search_hydration():
+    endpoint = (
+        "https://jobs.apple.com/en-us/search"
+        "?location=united-states-USA&team=human-interface-design-DESGN-HID"
+    )
+    page_url = endpoint + "&page=1"
+    payload = {
+        "loaderData": {
+            "search": {
+                "totalRecords": 1,
+                "searchResults": [
+                    {
+                        "id": "2001-0836",
+                        "reqId": "2001-0836",
+                        "postingTitle": "Senior Product Designer, AI/ML Tools",
+                        "transformedPostingTitle": "senior-product-designer-ai-ml-tools",
+                        "jobSummary": "Design AI evaluation workflows with Figma.",
+                        "postDateInGMT": "2026-08-01T00:00:00Z",
+                        "locations": [
+                            {
+                                "name": "Cupertino",
+                                "stateProvince": "California",
+                                "countryName": "United States of America",
+                            }
+                        ],
+                    }
+                ],
+            }
+        }
+    }
+    encoded = json.dumps(json.dumps(payload))
+    respx.get(page_url).mock(
+        return_value=httpx.Response(
+            200,
+            text=f"<script>window.__staticRouterHydrationData = JSON.parse({encoded});</script>",
+        )
+    )
+    cfg = company("apple", {"max_pages": 1})
+    cfg = cfg.model_copy(update={"careers_url": endpoint})
+    async with httpx.AsyncClient() as client:
+        rows = await AppleSource(cfg, client).fetch()
+    assert rows[0].external_job_id == "2001-0836"
+    assert "Cupertino" in rows[0].location_raw
+    assert rows[0].posted_at is not None
