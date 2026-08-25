@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       send_test_message:
-        description: "Send a Telegram message after checking the database"
+        description: "Send an optional Telegram message after checking the database"
         required: false
-        default: true
+        default: false
         type: boolean
 
 permissions:

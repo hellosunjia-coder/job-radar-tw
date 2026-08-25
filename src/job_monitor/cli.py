@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+from pathlib import Path
 from typing import Annotated
 
 import httpx
@@ -10,7 +12,7 @@ import typer
 
 from .config import Settings, load_companies, load_preferences, load_profiles
 from .ndx import fetch_ndx_constituents
-from .notifier import TelegramNotifier, render_job_message
+from .notifier import TelegramNotifier, render_job_message, render_run_summary
 from .onboarding import (
     company_inventory,
     filter_companies,
@@ -61,6 +63,21 @@ def _print_report(report) -> None:
     typer.echo(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def _write_github_summary(report: RunReport, settings: Settings) -> None:
+    summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+    if not summary_path:
+        return
+    summary = render_run_summary(
+        run_key=report.run_key,
+        stats=report.stats(),
+        errors=report.errors,
+        matched_jobs=report.matched_jobs,
+        zero_job_sources=report.zero_job_sources,
+        max_matches=settings.daily_summary_max_matches,
+    )
+    Path(summary_path).write_text(summary + "\n", encoding="utf-8")
+
+
 def _selected_slugs(company: list[str] | None) -> set[str] | None:
     return set(company) if company else None
 
@@ -107,10 +124,6 @@ def run_command(
             )
             _print_report(report)
             raise typer.Exit()
-    if not (settings.telegram_bot_token and settings.telegram_chat_id):
-        raise typer.BadParameter(
-            "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are required for monitor run notifications"
-        )
     report = asyncio.run(
         run_pipeline(
             settings,
@@ -122,6 +135,7 @@ def run_command(
         )
     )
     _print_report(report)
+    _write_github_summary(report, settings)
     if report.skipped_reason:
         raise typer.Exit()
     if any(item.get("company") == "telegram" for item in report.errors):
@@ -322,15 +336,16 @@ def doctor(
 ) -> None:
     """Check runtime credentials, database connectivity, and schema."""
     settings, _, _, _ = _load()
-    missing_secrets = [
-        name
-        for name, value in (
-            ("DATABASE_URL", settings.database_url),
-            ("TELEGRAM_BOT_TOKEN", settings.telegram_bot_token),
-            ("TELEGRAM_CHAT_ID", settings.telegram_chat_id),
+    missing_secrets = ["DATABASE_URL"] if not settings.database_url else []
+    if send_telegram:
+        missing_secrets.extend(
+            name
+            for name, value in (
+                ("TELEGRAM_BOT_TOKEN", settings.telegram_bot_token),
+                ("TELEGRAM_CHAT_ID", settings.telegram_chat_id),
+            )
+            if not value
         )
-        if not value
-    ]
     if missing_secrets:
         raise typer.BadParameter("Missing runtime settings: " + ", ".join(missing_secrets))
     try:
