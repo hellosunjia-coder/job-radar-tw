@@ -75,12 +75,12 @@ Token 等同 bot 密碼。如果不小心貼到公開頁面，請立刻回到 Bo
 | Name | Value |
 | --- | --- |
 | `DATABASE_URL` | Supabase Session pooler connection string |
-| `TELEGRAM_BOT_TOKEN` | BotFather 給的 token |
-| `TELEGRAM_CHAT_ID` | 上一步找到的 chat ID |
+| `TELEGRAM_BOT_TOKEN` | 選填；若要同時使用 Telegram，填入 BotFather 給的 token |
+| `TELEGRAM_CHAT_ID` | 選填；若要同時使用 Telegram，填入接收通知的 chat ID |
 
 基本監控不需要 `SUPABASE_SERVICE_ROLE_KEY`。它只用於選配的 Cloudflare dashboard，而且應存放在 Cloudflare，不是提交到 GitHub。
 
-`RESUME_TEXT` 與 `OPENAI_API_KEY` 都是選填 secret。沒有履歷或 OpenAI key，規則評分仍可正常執行。
+`TELEGRAM_BOT_TOKEN`、`TELEGRAM_CHAT_ID`、`RESUME_TEXT` 與 `OPENAI_API_KEY` 都是選填 secret。沒有 Telegram、履歷或 OpenAI key，監控與規則評分仍可正常執行；每日結果會寫入 GitHub Actions 的 Summary。
 
 需要調整預設值時，再到同一頁的 **Variables** 加入：
 
@@ -93,11 +93,11 @@ Token 等同 bot 密碼。如果不小心貼到公開頁面，請立刻回到 Bo
 
 ### 6. 跑一次 Setup
 
-打開 **Actions → Setup Job Radar TW → Run workflow**，讓 `send_test_message` 保持勾選。這個 workflow 會：
+打開 **Actions → Setup Job Radar TW → Run workflow**。使用 ChatGPT 接收結果時，讓 `send_test_message` 保持關閉；若另外設定了 Telegram，才需要勾選。這個 workflow 會：
 
 - 檢查設定檔；
 - 初始化 Supabase 資料表並啟用 RLS；
-- 傳一則 Telegram 測試訊息。
+- 視需要傳一則 Telegram 測試訊息。
 
 三項都成功後再跑正式監控。若看不到 **Run workflow**，確認 workflow 已在 repository 的 default branch，且 Actions 已啟用。
 
@@ -111,7 +111,11 @@ Token 等同 bot 密碼。如果不小心貼到公開頁面，請立刻回到 Bo
 
 超過上限的項目會留在 outbox，之後的 run 會繼續傳送。想加快進度也可以再手動執行，留空的 `run_key` 會自動產生。Backfill 不會到網站追溯已下架的歷史職缺。
 
-確認手動執行正常後就不用再操作。預設排程約在每天美東時間 20:00 開始，workflow 會安排數次備援觸發；`run_key` 會略過已成功或仍在執行的同日 run，失敗或逾時的 run 則可由下一次觸發重試。GitHub 排程可能延遲，不適合當成即時告警。
+確認手動執行正常後就不用再操作。預設排程約在每天中部時間 8:00 開始，workflow 會安排數次備援觸發；`run_key` 會略過已成功或仍在執行的同日 run，失敗或逾時的 run 則可由下一次觸發重試。GitHub 排程可能延遲，不適合當成即時告警。
+
+### 使用 ChatGPT 接收每日結果
+
+不需要建立 Telegram bot。每次監控都會把來源狀態、職缺數量與符合門檻的職缺寫入該次 GitHub Actions run 的 Summary。可以建立 ChatGPT 排程，在每日監控完成後讀取最新的 **Job Radar TW** run，並把 Summary 回報到同一個 ChatGPT task。Supabase 繼續保存職缺歷史、配對結果與去重狀態。
 
 ## 日常查看
 
