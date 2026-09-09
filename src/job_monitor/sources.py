@@ -513,4 +513,12 @@ class SourceRunner:
         lock = self.domain_locks.setdefault(domain, asyncio.Lock())
         async with self.semaphore, lock:
             source = SOURCE_CLASSES[company.ats_type](company, self.client)
-            return await source.fetch()
+            jobs = await source.fetch()
+            title_terms = company.ats_config.get("title_filter_terms", [])
+            if not title_terms:
+                return jobs
+            normalized_terms = [term.casefold() for term in title_terms]
+            return [
+                job for job in jobs
+                if any(term in job.title.casefold() for term in normalized_terms)
+            ]

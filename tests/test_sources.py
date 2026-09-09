@@ -13,6 +13,7 @@ from job_monitor.sources import (
     GreenhouseSource,
     LeverSource,
     MicrosoftSource,
+    SourceRunner,
     SmartRecruitersSource,
     WorkdaySource,
 )
@@ -188,7 +189,7 @@ async def test_amazon_search_api():
         return_value=httpx.Response(
             200,
             json={
-                "hits": 1,
+                "hits": 2,
                 "jobs": [
                     {
                         "id_icims": "123",
@@ -198,15 +199,28 @@ async def test_amazon_search_api():
                         "basic_qualifications": "<p>Figma</p>",
                         "preferred_qualifications": "",
                         "job_path": "/en/jobs/123/senior-product-designer",
-                    }
+                    },
+                    {
+                        "id_icims": "124",
+                        "title": "Senior Data Scientist",
+                        "normalized_location": "Seattle, Washington, USA",
+                        "description": "Machine learning",
+                        "basic_qualifications": "Python",
+                        "preferred_qualifications": "",
+                        "job_path": "/en/jobs/124/senior-data-scientist",
+                    },
                 ],
             },
         )
     )
-    cfg = company("amazon", {"endpoint": endpoint})
+    cfg = company(
+        "amazon",
+        {"endpoint": endpoint, "title_filter_terms": ["senior product designer"]},
+    )
     cfg = cfg.model_copy(update={"careers_url": "https://www.amazon.jobs/"})
     async with httpx.AsyncClient() as client:
-        rows = await AmazonSource(cfg, client).fetch()
+        rows = await SourceRunner(client).fetch(cfg)
+    assert len(rows) == 1
     assert rows[0].external_job_id == "123"
     assert rows[0].description_raw == "AI product design Figma "
 
