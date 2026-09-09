@@ -6,7 +6,6 @@ import respx
 
 from job_monitor.models import CompanyConfig
 from job_monitor.sources import (
-    AmazonSource,
     AppleSource,
     AshbySource,
     GoogleSource,
