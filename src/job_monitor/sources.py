@@ -519,6 +519,7 @@ class SourceRunner:
                 return jobs
             normalized_terms = [term.casefold() for term in title_terms]
             return [
-                job for job in jobs
+                job
+                for job in jobs
                 if any(term in job.title.casefold() for term in normalized_terms)
             ]
