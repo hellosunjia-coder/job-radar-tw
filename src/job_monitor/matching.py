@@ -233,10 +233,7 @@ def match_job(
             tier="filtered",
             filtered_reason="seniority",
         )
-    if (
-        preferences.required_seniorities
-        and job.seniority not in preferences.required_seniorities
-    ):
+    if preferences.required_seniorities and job.seniority not in preferences.required_seniorities:
         return MatchResult(
             profile=profile.name,
             score=0,
