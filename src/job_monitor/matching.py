@@ -88,7 +88,12 @@ def parse_job(raw: RawJob) -> ParsedJob:
         seniority = Seniority.DIRECTOR
     elif _contains(title, ["principal", "staff", "lead", "manager"]):
         seniority = Seniority.LEAD
-    elif _contains(title, ["senior", " sr ", "sr."]):
+    elif _contains(title, ["senior", " sr ", "sr.", "designer iii"]):
+        seniority = Seniority.SENIOR
+    elif _contains(title, ["designer", "design lead"]) and _contains(
+        raw.description_raw,
+        ["senior ux designer", "senior product designer", "senior interaction designer"],
+    ):
         seniority = Seniority.SENIOR
     elif _contains(title, ["analyst", "engineer", "scientist", "developer"]):
         seniority = Seniority.MID
@@ -104,7 +109,19 @@ def parse_job(raw: RawJob) -> ParsedJob:
     else:
         remote_type = RemoteType.UNKNOWN
 
-    if _contains(title, ["analytics engineer", "data engineer"]):
+    if _contains(
+        title,
+        [
+            "product designer",
+            "ux designer",
+            "user experience designer",
+            "interaction designer",
+            "product design lead",
+            "design lead",
+        ],
+    ):
+        family = "product_design"
+    elif _contains(title, ["analytics engineer", "data engineer"]):
         family = "analytics_engineering"
     elif "data scientist" in title:
         family = "data_science"
@@ -176,6 +193,14 @@ def match_job(
     visa_sponsorship_required: bool = False,
     company_visa_support: VisaSupport = VisaSupport.UNKNOWN,
 ) -> MatchResult:
+    if _contains(job.raw.title, preferences.excluded_title_terms):
+        return MatchResult(
+            profile=profile.name,
+            score=0,
+            eligible=False,
+            tier="filtered",
+            filtered_reason="title",
+        )
     if (
         preferences.exclude_citizenship_required
         and job.requires_citizenship
@@ -201,6 +226,14 @@ def match_job(
             filtered_reason="visa_sponsorship",
         )
     if job.seniority in preferences.excluded_seniorities:
+        return MatchResult(
+            profile=profile.name,
+            score=0,
+            eligible=False,
+            tier="filtered",
+            filtered_reason="seniority",
+        )
+    if preferences.required_seniorities and job.seniority not in preferences.required_seniorities:
         return MatchResult(
             profile=profile.name,
             score=0,

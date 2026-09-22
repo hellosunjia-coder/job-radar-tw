@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -197,6 +198,7 @@ async def test_amazon_search_api():
                         "description": "<p>AI product design</p>",
                         "basic_qualifications": "<p>Figma</p>",
                         "preferred_qualifications": "",
+                        "posted_date": "September 19, 2026",
                         "job_path": "/en/jobs/123/senior-product-designer",
                     },
                     {
@@ -222,6 +224,46 @@ async def test_amazon_search_api():
     assert len(rows) == 1
     assert rows[0].external_job_id == "123"
     assert rows[0].description_raw == "AI product design Figma "
+    assert rows[0].posted_at == datetime(2026, 9, 19, tzinfo=UTC)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_amazon_description_can_supply_senior_title_signal():
+    endpoint = "https://www.amazon.jobs/en/search.json"
+    respx.get(endpoint).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "hits": 1,
+                "jobs": [
+                    {
+                        "id_icims": "10552669",
+                        "title": "User Experience Designer III, AI at Work",
+                        "normalized_location": "Austin, Texas, USA; Seattle, Washington, USA",
+                        "description": "We are looking for a Senior UX Designer.",
+                        "basic_qualifications": "7+ years of design experience",
+                        "preferred_qualifications": "AI-native product design",
+                        "posted_date": "September 19, 2026",
+                        "job_path": "/en/jobs/10552669/user-experience-designer-iii-ai-at-work",
+                    }
+                ],
+            },
+        )
+    )
+    cfg = company(
+        "amazon",
+        {
+            "endpoint": endpoint,
+            "search_texts": ["user experience designer"],
+            "title_filter_terms": ["senior ux designer"],
+        },
+    ).model_copy(update={"careers_url": "https://www.amazon.jobs/"})
+
+    async with httpx.AsyncClient() as client:
+        rows = await SourceRunner(client).fetch(cfg)
+
+    assert [row.external_job_id for row in rows] == ["10552669"]
 
 
 @pytest.mark.asyncio

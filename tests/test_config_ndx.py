@@ -39,6 +39,8 @@ preferences:
   exclude_citizenship_required: false
   exclude_clearance_required: false
   excluded_seniorities: [director_plus]
+  required_seniorities: [senior, lead]
+  excluded_title_terms: [manager, director]
 """.strip(),
         encoding="utf-8",
     )
@@ -50,6 +52,8 @@ preferences:
     assert not preferences.exclude_citizenship_required
     assert not preferences.exclude_clearance_required
     assert preferences.excluded_seniorities == {Seniority.DIRECTOR}
+    assert preferences.required_seniorities == {Seniority.SENIOR, Seniority.LEAD}
+    assert preferences.excluded_title_terms == ["manager", "director"]
 
 
 def test_ats_config_contract():
