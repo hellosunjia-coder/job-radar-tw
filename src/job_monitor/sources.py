@@ -27,7 +27,13 @@ def _parse_datetime(value: Any) -> datetime | None:
         parsed = datetime.fromisoformat(text)
         return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except ValueError:
-        return None
+        pass
+    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=UTC)
+        except ValueError:
+            continue
+    return None
 
 
 def _html_text(value: str | None) -> str:
@@ -271,6 +277,7 @@ class AmazonSource(JobSource):
                             location_raw=item.get("normalized_location")
                             or item.get("location", ""),
                             description_raw=description,
+                            posted_at=_parse_datetime(item.get("posted_date")),
                             url=urljoin(str(self.company.careers_url), item["job_path"]),
                             metadata={"amazon": item},
                         )
@@ -521,5 +528,8 @@ class SourceRunner:
             return [
                 job
                 for job in jobs
-                if any(term in job.title.casefold() for term in normalized_terms)
+                if any(
+                    term in f"{job.title} {job.description_raw}".casefold()
+                    for term in normalized_terms
+                )
             ]

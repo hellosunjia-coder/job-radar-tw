@@ -122,6 +122,8 @@ class SearchPreferences(BaseModel):
     excluded_seniorities: set[Seniority] = Field(
         default_factory=lambda: {Seniority.ENTRY, Seniority.DIRECTOR}
     )
+    required_seniorities: set[Seniority] = Field(default_factory=set)
+    excluded_title_terms: list[str] = Field(default_factory=list)
 
     @field_validator("location_terms")
     @classmethod
@@ -129,6 +131,14 @@ class SearchPreferences(BaseModel):
         cleaned = [value.strip() for value in values if value.strip()]
         if len({value.casefold() for value in cleaned}) != len(cleaned):
             raise ValueError("location_terms must be unique")
+        return cleaned
+
+    @field_validator("excluded_title_terms")
+    @classmethod
+    def clean_excluded_title_terms(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values if value.strip()]
+        if len({value.casefold() for value in cleaned}) != len(cleaned):
+            raise ValueError("excluded_title_terms must be unique")
         return cleaned
 
 

@@ -14,3 +14,14 @@ preferences:
   excluded_seniorities:
     - entry
     - director_plus
+  required_seniorities:
+    - senior
+    - lead
+  excluded_title_terms:
+    - manager
+    - management
+    - head
+    - director
+    - vp
+    - vice president
+    - chief

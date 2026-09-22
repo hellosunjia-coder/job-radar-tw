@@ -21,6 +21,17 @@ SKILL_ALIASES = {
     "airflow": ["airflow"],
     "statistics": ["statistics", "statistical"],
     "machine learning": ["machine learning", "ml"],
+    "figma": ["figma"],
+    "prototyping": ["prototype", "prototyping"],
+    "interaction design": ["interaction design", "interaction designer"],
+    "product design": ["product design", "product designer"],
+    "ux design": ["ux design", "ux designer", "user experience design"],
+    "design systems": ["design system", "design systems"],
+    "user research": ["user research", "usability research"],
+    "usability testing": ["usability testing", "usability test"],
+    "accessibility": ["accessibility", "accessible design"],
+    "workflow design": ["workflow design", "workflows"],
+    "journey mapping": ["journey mapping", "customer journey", "user journey"],
 }
 
 _TOKEN_RE = re.compile(r"[a-z][a-z0-9+#.-]*")

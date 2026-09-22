@@ -148,6 +148,43 @@ def test_non_analytics_role_is_filtered_even_with_data_terms():
     assert result.filtered_reason == "job_family"
 
 
+def test_designer_iii_with_senior_description_is_senior_product_design():
+    parsed = parse_job(
+        job(
+            title="User Experience Designer III, AI at Work",
+            location="Austin, TX; Seattle, WA",
+            description=(
+                "We are looking for a Senior UX Designer to own an AI-native product. "
+                "Lead interaction design, prototyping, user research, usability testing, "
+                "and design systems in Figma."
+            ),
+        )
+    )
+
+    assert parsed.seniority == Seniority.SENIOR
+    assert parsed.job_family == "product_design"
+
+
+def test_manager_design_title_is_filtered_by_preference():
+    parsed = parse_job(
+        job(
+            title="Senior Product Design Manager",
+            location="Austin, TX",
+            description="Lead AI product design in Figma.",
+        )
+    )
+    preferences = SearchPreferences(
+        location_terms=["Austin"],
+        include_remote=True,
+        required_seniorities={Seniority.SENIOR, Seniority.LEAD},
+        excluded_title_terms=["manager", "management", "head", "director", "vp", "chief"],
+    )
+
+    result = match_job(parsed, PROFILES["sunjia_ai_product_designer"], preferences)
+
+    assert result.filtered_reason == "title"
+
+
 def test_custom_location_terms_replace_builtin_location_assumptions():
     preferences = SearchPreferences(location_terms=["Chicago"], include_remote=False)
     chicago = parse_job(
