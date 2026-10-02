@@ -1,3 +1,4 @@
+/opt/homebrew/Library/Homebrew/cmd/shellenv.sh: line 27: /bin/ps: Operation not permitted
 from __future__ import annotations
 
 import re
@@ -25,7 +26,7 @@ class Settings(BaseSettings):
     resume_text: SecretStr | None = None
     visa_sponsorship_required: bool = False
     immediate_notification_min_score: float = Field(default=0.82, ge=0, le=1)
-    immediate_notification_max_source_age_days: int = Field(default=21, ge=0)
+    immediate_notification_max_source_age_days: int = Field(default=3, ge=0)
     immediate_notification_max_per_run: int = Field(default=5, ge=0)
     daily_summary_max_matches: int = Field(default=15, ge=1)
     companies_config: Path = Path("config/companies.yml")
