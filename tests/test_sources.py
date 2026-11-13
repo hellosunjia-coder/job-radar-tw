@@ -332,6 +332,62 @@ async def test_microsoft_search_and_detail_api():
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_microsoft_filters_titles_before_fetching_details_and_caps_pages():
+    search_endpoint = "https://apply.careers.microsoft.com/api/pcsx/search"
+    detail_endpoint = "https://apply.careers.microsoft.com/api/pcsx/position_details"
+    search_route = respx.get(search_endpoint).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "count": 500,
+                    "positions": [
+                        {"id": 456, "name": "Senior Product Designer"},
+                        {"id": 789, "name": "Senior Software Engineer"},
+                    ],
+                }
+            },
+        )
+    )
+    matching_detail = respx.get(
+        detail_endpoint,
+        params={"position_id": "456", "domain": "microsoft.com", "hl": "en"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "data": {
+                    "id": 456,
+                    "name": "Senior Product Designer",
+                    "standardizedLocations": ["Redmond, WA, US"],
+                    "jobDescription": "Design AI experiences",
+                    "positionUrl": "/careers/job/456",
+                }
+            },
+        )
+    )
+    cfg = company(
+        "microsoft",
+        {
+            "search_endpoint": search_endpoint,
+            "detail_endpoint": detail_endpoint,
+            "domain": "microsoft.com",
+            "search_texts": ["senior product designer"],
+            "title_filter_terms": ["senior product designer"],
+            "max_pages": 1,
+        },
+    ).model_copy(update={"careers_url": "https://apply.careers.microsoft.com/"})
+
+    async with httpx.AsyncClient() as client:
+        rows = await MicrosoftSource(cfg, client).fetch()
+
+    assert [row.external_job_id for row in rows] == ["456"]
+    assert search_route.call_count == 1
+    assert matching_detail.call_count == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_google_search_html():
     endpoint = "https://www.google.com/about/careers/applications/jobs/results/"
     respx.get(
