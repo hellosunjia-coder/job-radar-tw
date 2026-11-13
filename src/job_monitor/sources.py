@@ -294,11 +294,13 @@ class MicrosoftSource(JobSource):
         cfg = self.company.ats_config
         search_texts = cfg.get("search_texts") or ["product designer"]
         location = cfg.get("location", "United States")
+        title_terms = [str(term).casefold() for term in cfg.get("title_filter_terms", [])]
+        max_pages = int(cfg.get("max_pages", 10))
         jobs: list[RawJob] = []
         seen: set[str] = set()
         for search_text in search_texts:
             start = 0
-            while True:
+            for _ in range(max_pages):
                 payload = await self.get_json(
                     cfg["search_endpoint"],
                     params={
@@ -311,6 +313,9 @@ class MicrosoftSource(JobSource):
                 data = payload.get("data") or {}
                 positions = data.get("positions", [])
                 for item in positions:
+                    title = str(item.get("name", ""))
+                    if title_terms and not any(term in title.casefold() for term in title_terms):
+                        continue
                     external_id = str(item["id"])
                     if external_id in seen:
                         continue
