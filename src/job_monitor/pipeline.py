@@ -32,6 +32,7 @@ class RunReport:
     sources_attempted: int = 0
     sources_succeeded: int = 0
     jobs_fetched: int = 0
+    jobs_relevant: int = 0
     jobs_new: int = 0
     jobs_changed: int = 0
     matches: int = 0
@@ -211,31 +212,7 @@ async def run_pipeline(
                     report.zero_job_sources.append(company.name)
                 for raw in raw_jobs:
                     parsed = parse_job(raw)
-                    observed_at = datetime.now(UTC)
-                    plan = (
-                        storage.plan_job(company_id, raw)
-                        if storage
-                        else JobPlan(
-                            job_id=raw.stable_external_id,
-                            is_new=True,
-                            changed=True,
-                            first_seen_at=observed_at,
-                            previous_content_hash=None,
-                        )
-                    )
-                    if not plan.changed and not backfill:
-                        if storage:
-                            storage.persist_job_decisions(
-                                company_id,
-                                run_id,
-                                raw,
-                                plan,
-                                [],
-                            )
-                        continue
-
-                    decisions: list[MatchDecision] = []
-                    eligible_matches: list[MatchedJob] = []
+                    evaluated_profiles: list[tuple[ProfileConfig, MatchResult]] = []
                     for profile_name in company.profiles:
                         profile: ProfileConfig = profiles[profile_name]
                         result = match_job(
@@ -264,6 +241,38 @@ async def run_pipeline(
                                 result.used_llm = True
                             except Exception as exc:
                                 logger.warning("LLM fallback for %s: %s", raw.title, exc)
+                        evaluated_profiles.append((profile, result))
+
+                    if not any(result.eligible for _, result in evaluated_profiles):
+                        continue
+
+                    report.jobs_relevant += 1
+                    observed_at = datetime.now(UTC)
+                    plan = (
+                        storage.plan_job(company_id, raw)
+                        if storage
+                        else JobPlan(
+                            job_id=raw.stable_external_id,
+                            is_new=True,
+                            changed=True,
+                            first_seen_at=observed_at,
+                            previous_content_hash=None,
+                        )
+                    )
+                    if not plan.changed and not backfill:
+                        if storage:
+                            storage.persist_job_decisions(
+                                company_id,
+                                run_id,
+                                raw,
+                                plan,
+                                [],
+                            )
+                        continue
+
+                    decisions: list[MatchDecision] = []
+                    eligible_matches: list[MatchedJob] = []
+                    for profile, result in evaluated_profiles:
                         matched = None
                         notification_message = None
                         if result.eligible:
