@@ -700,32 +700,37 @@ class Storage:
     def mark_missing(self, company_id: str, run_id: str) -> int:
         with self.engine.begin() as conn:
             self._assert_active_run(conn, run_id)
-            candidates = conn.execute(
-                select(jobs.c.id, jobs.c.missing_count)
-                .where(
-                    jobs.c.company_id == company_id,
-                    jobs.c.status == "active",
-                    jobs.c.last_seen_run_id != run_id,
+            missing_jobs = (
+                jobs.c.company_id == company_id,
+                jobs.c.status == "active",
+                jobs.c.last_seen_run_id != run_id,
+            )
+            closed_job_ids = list(
+                conn.execute(
+                    select(jobs.c.id).where(
+                        *missing_jobs,
+                        jobs.c.missing_count >= 1,
+                    )
+                ).scalars()
+            )
+            conn.execute(
+                update(jobs)
+                .where(*missing_jobs)
+                .values(
+                    missing_count=jobs.c.missing_count + 1,
+                    status=case(
+                        (jobs.c.missing_count >= 1, "closed"),
+                        else_=jobs.c.status,
+                    ),
                 )
-                .with_for_update()
-            ).all()
-            closed = 0
-            closed_job_ids: list[str] = []
-            for job_id, count in candidates:
-                new_count = count + 1
-                values: dict[str, Any] = {"missing_count": new_count}
-                if new_count >= 2:
-                    values["status"] = "closed"
-                    closed += 1
-                    closed_job_ids.append(job_id)
-                conn.execute(update(jobs).where(jobs.c.id == job_id).values(**values))
+            )
             if closed_job_ids:
                 conn.execute(
                     delete(notification_outbox).where(
                         notification_outbox.c.job_id.in_(closed_job_ids)
                     )
                 )
-            return closed
+            return len(closed_job_ids)
 
     def record_match(
         self, job_id: str, profile_version: str, content_hash: str, result: MatchResult

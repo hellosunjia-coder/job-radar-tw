@@ -15,6 +15,8 @@ class FakeStorage:
         self.matches = []
         self.finished = None
         self.baseline_completed = True
+        self.planned_jobs = []
+        self.persisted_jobs = []
 
     def claim_run(self, run_key):
         return RunClaim("run-id", reclaimed=False)
@@ -33,6 +35,7 @@ class FakeStorage:
         return None
 
     def plan_job(self, company_id, raw):
+        self.planned_jobs.append(raw.stable_external_id)
         return JobPlan(
             job_id=raw.stable_external_id,
             is_new=False,
@@ -42,6 +45,7 @@ class FakeStorage:
         )
 
     def persist_job_decisions(self, company_id, run_id, raw, plan, decisions):
+        self.persisted_jobs.append(raw.stable_external_id)
         enqueued = 0
         for decision in decisions:
             self.matches.append((plan.job_id, decision.result))
@@ -97,6 +101,73 @@ class FakeNotifier:
 
     async def send(self, message):
         self.messages.append(message)
+
+
+@pytest.mark.asyncio
+async def test_irrelevant_jobs_are_filtered_before_database_work(monkeypatch):
+    raw_jobs = [
+        RawJob(
+            source_company="acme",
+            external_job_id="relevant",
+            title="Senior Product Designer",
+            location_raw="Austin, TX",
+            description_raw="Design product workflows in Figma",
+            url="https://example.com/jobs/relevant",
+        ),
+        RawJob(
+            source_company="acme",
+            external_job_id="irrelevant",
+            title="Senior Software Engineer",
+            location_raw="Austin, TX",
+            description_raw="Build backend services",
+            url="https://example.com/jobs/irrelevant",
+        ),
+    ]
+    storage = FakeStorage()
+
+    class FakeSourceRunner:
+        def __init__(self, client, max_concurrency):
+            pass
+
+        async def fetch(self, company):
+            return raw_jobs
+
+    monkeypatch.setattr(pipeline, "Storage", lambda *args, **kwargs: storage)
+    monkeypatch.setattr(pipeline, "SourceRunner", FakeSourceRunner)
+
+    settings = Settings(database_url="sqlite:///unused.db")
+    company = CompanyConfig(
+        slug="acme",
+        name="Acme",
+        careers_url="https://example.com/jobs",
+        ats_type="jsonld",
+        industry="tech",
+        profiles=["product-design"],
+        source_verified=True,
+    )
+    profile = ProfileConfig(
+        name="product-design",
+        threshold=0.6,
+        strong_threshold=0.8,
+        weights={"title": 0.6, "location": 0.2, "seniority": 0.2},
+        title_terms=["product designer"],
+        domain_terms=[],
+        skills=[],
+    )
+    preferences = SearchPreferences(location_terms=["Austin"], include_remote=False)
+
+    report = await pipeline.run_pipeline(
+        settings,
+        [company],
+        {profile.name: profile},
+        preferences,
+        run_key="filter-before-storage",
+    )
+
+    assert report.jobs_fetched == 2
+    assert report.jobs_relevant == 1
+    assert storage.planned_jobs == ["relevant"]
+    assert storage.persisted_jobs == ["relevant"]
 
 
 @pytest.mark.asyncio
