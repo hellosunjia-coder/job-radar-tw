@@ -465,3 +465,39 @@ async def test_apple_search_hydration():
     assert rows[0].external_job_id == "2001-0836"
     assert "Cupertino" in rows[0].location_raw
     assert rows[0].posted_at is not None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_apple_search_retries_transient_timeout():
+    endpoint = (
+        "https://jobs.apple.com/en-us/search"
+        "?location=united-states-USA&team=human-interface-design-DESGN-HID"
+    )
+    page_url = endpoint + "&page=1"
+    payload = {
+        "loaderData": {
+            "search": {
+                "totalRecords": 0,
+                "searchResults": [],
+            }
+        }
+    }
+    encoded = json.dumps(json.dumps(payload))
+    request = httpx.Request("GET", page_url)
+    route = respx.get(page_url)
+    route.side_effect = [
+        httpx.ReadTimeout("timed out", request=request),
+        httpx.Response(
+            200,
+            text=f"<script>window.__staticRouterHydrationData = JSON.parse({encoded});</script>",
+        ),
+    ]
+    cfg = company("apple", {"max_pages": 1})
+    cfg = cfg.model_copy(update={"careers_url": endpoint})
+
+    async with httpx.AsyncClient() as client:
+        rows = await AppleSource(cfg, client).fetch()
+
+    assert rows == []
+    assert route.call_count == 2
