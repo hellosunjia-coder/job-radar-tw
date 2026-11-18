@@ -411,15 +411,29 @@ class GoogleSource(JobSource):
 
 
 class AppleSource(JobSource):
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=8),
+        retry=retry_if_exception_type((httpx.HTTPError, SourceError)),
+        reraise=True,
+    )
+    async def _fetch_page(self, url: httpx.URL) -> dict[str, Any]:
+        try:
+            response = await self.client.get(url, timeout=45.0)
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise SourceError(
+                f"Apple careers request failed ({type(exc).__name__}) for {url}"
+            ) from exc
+        return _parse_apple_hydration(html.unescape(response.text))
+
     async def fetch(self) -> list[RawJob]:
         max_pages = int(self.company.ats_config.get("max_pages", 3))
         jobs: list[RawJob] = []
         seen: set[str] = set()
         for page in range(1, max_pages + 1):
             url = httpx.URL(str(self.company.careers_url)).copy_set_param("page", page)
-            response = await self.client.get(url)
-            response.raise_for_status()
-            hydration = _parse_apple_hydration(html.unescape(response.text))
+            hydration = await self._fetch_page(url)
             search = (hydration.get("loaderData") or {}).get("search") or {}
             postings = search.get("searchResults", [])
             for item in postings:
